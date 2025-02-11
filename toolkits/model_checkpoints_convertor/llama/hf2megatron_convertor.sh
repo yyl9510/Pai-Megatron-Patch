@@ -25,7 +25,7 @@ export PYTHONPATH=$PYTHONPATH:${MEGATRON_PATH}:${MEGATRON_PATH}/Megatron-LM-2310
 python hf2megatron.py \
 --load_path ${SOURCE_CKPT_PATH} \
 --save_path ${TARGET_CKPT_PATH} \
---target_params_dtype fp16 \
+--target_params_dtype bf16 \
 --megatron-path ${MEGATRON_PATH} \
 --target_tensor_model_parallel_size ${TP} \
 --target_pipeline_model_parallel_size ${PP} \

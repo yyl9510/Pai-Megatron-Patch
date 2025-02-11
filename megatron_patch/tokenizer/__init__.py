@@ -93,7 +93,7 @@ def build_tokenizer(args):
             args.load,
             model_max_length=args.seq_length,
             padding_side="right",
-            use_fast=False,
+            # use_fast=False,
             trust_remote_code=True
         )
 

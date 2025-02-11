@@ -161,7 +161,8 @@ def pretrain(train_valid_test_dataset_provider,
         print_datetime('after training is done')
 
         if args.save and iteration != 0:
-            save_checkpoint(iteration, model, optimizer, opt_param_scheduler)
+            pass
+            # save_checkpoint(iteration, model, optimizer, opt_param_scheduler)
     else:
         print_rank_0('skipping training (--skip-train is on) ...')
 
@@ -520,6 +521,15 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             args.consumed_train_samples)
         log_string += ' elapsed time per iteration (ms): {:.1f} |'.format(
             elapsed_time_per_iteration * 1000.0)
+        log_string += ' Token per second current iteration per card(token/s): {:.1f} |'.format(
+            batch_size * args.seq_length  / elapsed_time_per_iteration)
+        average_token_per_sec = batch_size * args.seq_length * total_iterations / elapsed_time
+        log_string += ' Average token per second per card(token/s): {:.1f} |'.format(average_token_per_sec)
+
+        cuda_gb_max_allocated = torch.cuda.max_memory_allocated() / 1024 / 1024 / 1024
+        cuda_gb_max_reserved = torch.cuda.max_memory_reserved() / 1024 / 1024 / 1024
+        log_string += f' max_allocated: {cuda_gb_max_allocated:.2f}G | max_reserved: {cuda_gb_max_reserved:.2f}G |'
+        
         log_string += ' learning rate: {:.3E} |'.format(learning_rate)
         log_string += ' global batch size: {:5d} |'.format(batch_size)
         for key in total_loss_dict:
@@ -551,17 +561,42 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             report_memory_flag = False
         timers.log(timers_to_log, normalizer=args.log_interval)
 
+
+        if iteration == args.train_iters - 1 and torch.distributed.get_rank() == 0:
+            filename = args.load.split('/')[-1]
+            model_name = '_'.join(filename.split('_')[:2])
+            config = {
+                "card": args.world_size, 
+                "tp": args.tensor_model_parallel_size, 
+                "pp": args.pipeline_model_parallel_size, 
+                "zero": args.use_distributed_optimizer, 
+                "sp": args.sequence_parallel, 
+                "ep": args.moe_expert_parallel_size
+            }
+            training_data = {
+                "framework": "megatron_lm",
+                "model_size": model_name,
+                "training_config": config,
+                "avg_token_per_sec": round(average_token_per_sec, 1),
+                "max_allocated": round(cuda_gb_max_allocated, 2),
+                "max_reserved": round(cuda_gb_max_reserved, 2)
+            }
+            with open(f"/workspace/megatron_data/llama3/megatron-output/megatron_lm_data.jsonl", 'a') as f:
+                import json
+                json.dump(training_data, f)
+                f.write('\n')
     return report_memory_flag
 
 
 def save_checkpoint_and_time(iteration, model, optimizer, opt_param_scheduler):
-    timers = get_timers()
-    # Extra barrier is added to make sure
-    # all ranks report the max time.
-    timers('save-checkpoint', log_level=0).start(barrier=True)
-    save_checkpoint(iteration, model, optimizer, opt_param_scheduler)
-    timers('save-checkpoint').stop(barrier=True)
-    timers.log(['save-checkpoint'])
+    pass
+    # timers = get_timers()
+    # # Extra barrier is added to make sure
+    # # all ranks report the max time.
+    # timers('save-checkpoint', log_level=0).start(barrier=True)
+    # save_checkpoint(iteration, model, optimizer, opt_param_scheduler)
+    # timers('save-checkpoint').stop(barrier=True)
+    # timers.log(['save-checkpoint'])
 
 def train(forward_step_func, model, optimizer, opt_param_scheduler,
           train_data_iterator, valid_data_iterator,

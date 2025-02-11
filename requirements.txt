@@ -3,7 +3,7 @@ ftfy
 hjson
 ninja
 tokenizers
-transformers>=4.38.2
+transformers==4.40.0
 accelerate>=0.23.0
 datasets==2.16.1
 wcwidth==0.2.12

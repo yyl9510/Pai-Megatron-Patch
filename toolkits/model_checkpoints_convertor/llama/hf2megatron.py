@@ -550,6 +550,8 @@ def convert_checkpoint_from_transformers_to_megatron(args):
     heads = config.num_attention_heads
     # The hidden_size per head.
     hidden_size_per_head = config.hidden_size // config.num_attention_heads
+    num_key_value_heads = config.num_key_value_heads
+
     for pp_rank in range(args.target_pipeline_model_parallel_size):
         layer_offset = pp_rank * num_layers
         if pp_rank > 0:
@@ -616,7 +618,7 @@ def convert_checkpoint_from_transformers_to_megatron(args):
                         params,
                         3.0,
                         2,
-                        8,
+                        num_key_value_heads,
                         hidden_size_per_head,
                     )
                     layer_name = f"layers.{layer}.self_attention.key_value.{weight}"
@@ -679,7 +681,7 @@ def convert_checkpoint_from_transformers_to_megatron(args):
 
                 if args.model_name == "llama2-70b":
                     hidden_size = config.hidden_size 
-                    num_groups = 8
+                    num_groups = config.num_attention_heads // config.num_key_value_heads
                     head_dim = config.hidden_size // config.num_attention_heads
                     num_heads = config.num_attention_heads
 
@@ -695,7 +697,7 @@ def convert_checkpoint_from_transformers_to_megatron(args):
                     qkv_layer_name = f"layers.{layer}.{qkv_name}"
 
                     group_query_weight = query_weight.view(num_groups // args.target_tensor_model_parallel_size, num_heads // num_groups * head_dim, hidden_size)
-                    group_kv_weight = kv_weight.view(num_groups // args.target_tensor_model_parallel_size, 2 * head_dim, hidden_size)
+                    group_kv_weight = kv_weight.view(num_groups // args.target_tensor_model_parallel_size, num_key_value_heads // num_groups * 2 * head_dim, hidden_size)
 
                     group_qkv_weight = torch.cat([group_query_weight, group_kv_weight], dim=1)
                     params_dict[qkv_layer_name] = group_qkv_weight.view(-1, hidden_size)

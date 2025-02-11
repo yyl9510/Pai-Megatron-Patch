@@ -1,17 +1,17 @@
 #!/bin/bash
 set -e
-ENV=$1
+ENV="dsw"   # 运行环境: dlc, dsw  
 MEGATRON_PATCH_PATH=$2
 MEGATRON_PATH=${MEGATRON_PATCH_PATH}/Megatron-LM-231007
 export PYTHONPATH=${MEGATRON_PATH}:${MEGATRON_PATCH_PATH}:$PYTHONPATH
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 if [ $ENV = dsw ]; then
-export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+export CUDA_VISIBLE_DEVICES=0,1,2,3
 MASTER_ADDR=localhost
 MASTER_PORT=$(shuf -n 1 -i 10000-65535)
 NNODES=1
 NODE_RANK=0
-GPUS_PER_NODE=8
+GPUS_PER_NODE=$1
 
 elif [ $ENV = dlc ]; then
 
@@ -46,20 +46,21 @@ TRAIN_TOKENS=${22}
 WARMUP_TOKENS=${23}
 OUTPUT_BASEPATH=${24}
 
-if [ $MODEL_SIZE = 8B ]; then
 
-NUM_LAYERS=32
-HIDDEN_SIZE=4096
-NUM_ATTN_HEADS=32
-INTERMEDIATE_SIZE=14336
-NUM_KEY_VALUE_HEADS=8
+NUM_LAYERS=${25}
+HIDDEN_SIZE=${26}
+INTERMEDIATE_SIZE=${27}
+NUM_ATTN_HEADS=${28}
+NUM_KEY_VALUE_HEADS=${29}
+
+
 MAX_POSITION_EMBEDDINGS=8192
 
 gqa_options=" \
 		    --group-query-attention \
 		    --num-query-groups ${NUM_KEY_VALUE_HEADS}"
 
-fi
+
 
 if [ $AC = full ]; then
     activation_checkpoint_options=" \
@@ -133,7 +134,7 @@ TRAIN_ITERS=$(( ${TRAIN_TOKENS} / ${GLOBAL_BATCH_SIZE} / ${SEQ_LEN} ))
 LR_WARMUP_ITERS=$(( ${WARMUP_TOKENS}  / ${GLOBAL_BATCH_SIZE} / ${SEQ_LEN} ))
 LR_DECAY_ITERS=$(( ${TRAIN_TOKENS} /  ${GLOBAL_BATCH_SIZE} / ${SEQ_LEN} ))
 
-NAME="${ENV}-pretrain-megatron-gpt3-${MODEL_SIZE}-lr-${LR}-bs-${BATCH_SIZE}-seqlen-${SEQ_LEN}-pr-${PR}-tp-${TP}-pp-${PP}-ac-${AC}-do-${DO}-sp-${SP}-tt-${TRAIN_TOKENS}-wt-${WARMUP_TOKENS}"
+NAME="${ENV}-pretrain-megatron-llama3-${MODEL_SIZE}-lr-${LR}-bs-${BATCH_SIZE}-seqlen-${SEQ_LEN}-pr-${PR}-tp-${TP}-pp-${PP}-ac-${AC}-do-${DO}-sp-${SP}-tt-${TRAIN_TOKENS}-wt-${WARMUP_TOKENS}"
 mkdir -p "${OUTPUT_BASEPATH}/tensorboard/"
 mkdir -p "${OUTPUT_BASEPATH}/checkpoint/"
 mkdir -p "${OUTPUT_BASEPATH}/log/"
@@ -170,7 +171,7 @@ megatron_options="  \
         --max-padding-length ${PAD_LEN} \
         --log-interval 1 \
         --eval-interval 10000 \
-        --eval-iters 10 \
+        --eval-iters 0 \
         --save-interval ${SAVE_INTERVAL} \
         --tensorboard-queue-size 1 \
         --tensorboard-dir ${TENSORBOARD_DIR} \
@@ -200,7 +201,7 @@ megatron_options="  \
         "
 
 run_cmd="torchrun $DISTRIBUTED_ARGS ../llama2/pretrain_megatron_llama.py
- ${megatron_options} ${pr_options} ${load_options} ${te_options} ${activation_checkpoint_options} ${do_options} ${flash_options} ${sp_options} ${gqa_options}"
+ ${megatron_options} ${pr_options} ${load_options} ${te_options} ${activation_checkpoint_options} ${do_options} ${flash_options} ${sp_options} ${gqa_options}" 
 
 echo ${run_cmd}
 eval ${run_cmd}
