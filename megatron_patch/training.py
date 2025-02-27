@@ -509,8 +509,9 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             )
 
     if iteration % args.log_interval == 0:
-        elapsed_time = timers('interval-time').elapsed(barrier=True)
-        elapsed_time_per_iteration = elapsed_time / total_iterations
+        elapsed_time_per_iteration = timers('interval-time').elapsed(barrier=True)
+        print(f"elapsed_time_per_iteration: {elapsed_time_per_iteration:.2f}s, micro-bsz: {args.micro_batch_size}, seq_len: {args.seq_length}, iteration: {iteration}")
+
         if writer:
             if args.log_timers_to_tensorboard:
                 writer.add_scalar('iteration-time',
@@ -521,10 +522,8 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             args.consumed_train_samples)
         log_string += ' elapsed time per iteration (ms): {:.1f} |'.format(
             elapsed_time_per_iteration * 1000.0)
-        log_string += ' Token per second current iteration per card(token/s): {:.1f} |'.format(
-            batch_size * args.seq_length  / elapsed_time_per_iteration)
-        average_token_per_sec = batch_size * args.seq_length * total_iterations / elapsed_time
-        log_string += ' Average token per second per card(token/s): {:.1f} |'.format(average_token_per_sec)
+        curent_iter_token_per_sec = (args.micro_batch_size * args.seq_length) / args.tensor_model_parallel_size/ args.pipeline_model_parallel_size / elapsed_time_per_iteration
+        log_string += ' Current iteration token per second per card(token/s): {:.1f} |'.format(curent_iter_token_per_sec)
 
         cuda_gb_max_allocated = torch.cuda.max_memory_allocated() / 1024 / 1024 / 1024
         cuda_gb_max_reserved = torch.cuda.max_memory_reserved() / 1024 / 1024 / 1024
@@ -565,6 +564,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
         if iteration == args.train_iters - 1 and torch.distributed.get_rank() == 0:
             filename = args.load.split('/')[-1]
             model_name = '_'.join(filename.split('_')[:2])
+            tflops = '_'.join(filename.split('_')[2:3])
             config = {
                 "card": args.world_size, 
                 "tp": args.tensor_model_parallel_size, 
@@ -576,8 +576,9 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             training_data = {
                 "framework": "megatron_lm",
                 "model_size": model_name,
+                "tflops": tflops,
                 "training_config": config,
-                "avg_token_per_sec": round(average_token_per_sec, 1),
+                "avg_token_per_sec": round(curent_iter_token_per_sec, 1),
                 "max_allocated": round(cuda_gb_max_allocated, 2),
                 "max_reserved": round(cuda_gb_max_reserved, 2)
             }
