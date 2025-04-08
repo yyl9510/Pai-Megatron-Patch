@@ -191,13 +191,24 @@ class Attention(MegatronModule, ABC):
         # Get the query, key and value tensors based on the type of attention -
         # self or cross attn.
         # query: [1, 8, 96, 192], key:[1, 8, 96, 192], value:[1, 8, 96, 128]
+
+        # import time
+        # torch.cuda.synchronize()
+        # start_time = time.time()
+
         query_states, key_states, value_states = self.get_query_key_value_tensors(hidden_states, key_value_states, position_ids)
+
+        # torch.cuda.synchronize()
+        # get_query_key_value_tensors_time = time.time()
 
         bsz, _, q_len, _ = query_states.size()
 
         attn_weights = (
             torch.matmul(query_states, key_states.transpose(2, 3)) * self.softmax_scale
         )
+
+        # torch.cuda.synchronize()
+        # attn_weights_matmul_time = time.time()
 
         if attention_mask is not None:
             attention_mask = attention_mask.to(torch.bfloat16)
@@ -208,19 +219,33 @@ class Attention(MegatronModule, ABC):
             attn_weights, dim=-1, dtype=torch.float32
         ).to(query_states.dtype)
 
+        # torch.cuda.synchronize()
+        # attn_weights_softmax_time = time.time()
+
         attn_weights = torch.nn.functional.dropout(
             attn_weights, p=self.config.attention_dropout, training=self.training
         )
 
         attn_output = torch.matmul(attn_weights, value_states)
 
+        # torch.cuda.synchronize()
+        # attn_output_matmul_time = time.time()
+
         attn_output = attn_output.transpose(0, 2).transpose(1, 2).contiguous()
 
         # [96, 1, 2048]
         core_attn_out = attn_output.reshape(q_len, bsz, self.num_attention_heads_per_partition * self.config.v_head_dim)
 
+        # torch.cuda.synchronize()
+        # attn_reshape_time = time.time()
+
         # output: [48, 1, 2048]
         output, bias = self.linear_proj(core_attn_out)
+
+        # torch.cuda.synchronize()
+        # attn_out_proj_time = time.time()
+        # print(f"get_query_key_value_tensors_time: {(get_query_key_value_tensors_time - start_time)*1000:.3f}ms, attn_weights_matmul_time: {(attn_weights_matmul_time - get_query_key_value_tensors_time)*1000:.3f}ms, attn_weights_softmax_time: {(attn_weights_softmax_time - attn_weights_matmul_time)*1000:.3f}ms, attn_output_matmul_time: {(attn_output_matmul_time - attn_weights_softmax_time)*1000:.3f}ms, attn_reshape_time: {(attn_reshape_time - attn_output_matmul_time)*1000:.3f}ms, attn_out_proj_time: {(attn_out_proj_time - attn_reshape_time)*1000:.3f}ms")
+        
 
         return output, bias
 

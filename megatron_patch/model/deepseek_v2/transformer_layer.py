@@ -180,11 +180,18 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
     ):
         # hidden_states: [s, b, h]
 
+        # import time
+        # torch.cuda.synchronize()
+        # start_time = time.time()
+
         # Residual connection.
         residual = hidden_states
 
         # Optional Input Layer norm
         input_layernorm_output = self.input_layernorm(hidden_states)
+
+        # torch.cuda.synchronize()
+        # input_layernorm_time = time.time()
 
         # Self attention.
         attention_output_with_bias = self.self_attention(
@@ -195,6 +202,9 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
             rotary_pos_emb=rotary_pos_emb,
             packed_seq_params=packed_seq_params,
         )
+
+        # torch.cuda.synchronize()
+        # self_attention_time = time.time()
 
         # TODO: could we move `bias_dropout_add_exec_handler` itself
         # inside the module provided in the `bias_dropout_add_spec` module?
@@ -209,6 +219,9 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
         # Optional Layer norm after self-attention
         pre_cross_attn_layernorm_output = self.pre_cross_attn_layernorm(hidden_states)
 
+        # torch.cuda.synchronize()
+        # pre_cross_attn_layernorm_time = time.time()
+
         # Cross attention.
         attention_output_with_bias = self.cross_attention(
             pre_cross_attn_layernorm_output,
@@ -216,6 +229,9 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
             key_value_states=context,
             inference_params=inference_params,
         )
+
+        # torch.cuda.synchronize()
+        # cross_attention_time = time.time()
 
         if isinstance(attention_output_with_bias, dict) and "context" in attention_output_with_bias:
             context = attention_output_with_bias["context"]
@@ -233,8 +249,14 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
         # Optional Layer norm post the cross-attention.
         pre_mlp_layernorm_output = self.pre_mlp_layernorm(hidden_states)
 
+        # torch.cuda.synchronize()
+        # pre_mlp_layernorm_time = time.time()
+
         # MLP.
         mlp_output_with_bias = self.mlp(pre_mlp_layernorm_output)
+
+        # torch.cuda.synchronize()
+        # mlp_time = time.time()
 
         # TODO: could we move `bias_dropout_add_exec_handler` itself
         # inside the module provided in the `bias_dropout_add_spec` module?
@@ -252,6 +274,11 @@ class TransformerLayer(MegatronModule, BaseTransformerLayer):
         output = make_viewless_tensor(
             inp=hidden_states, requires_grad=hidden_states.requires_grad, keep_graph=True
         )
+
+        # torch.cuda.synchronize()
+        # after_mlp_layernorm_time = time.time()
+        # print(f"input_layernorm_time: {(input_layernorm_time - start_time)*1000:.3f}ms, self_attention_time: {(self_attention_time - input_layernorm_time)*1000:.3f}ms, pre_cross_attn_layernorm_time: {(pre_cross_attn_layernorm_time - self_attention_time)*1000:.3f}ms, cross_attention_time: {(cross_attention_time - pre_cross_attn_layernorm_time)*1000:.3f}ms, pre_mlp_layernorm_time: {(pre_mlp_layernorm_time - cross_attention_time)*1000:.3f}ms, mlp_time: {(mlp_time - pre_mlp_layernorm_time)*1000:.3f}ms, after_mlp_layernorm_time: {(after_mlp_layernorm_time - mlp_time)*1000:.3f}ms")
+              
 
         return output, context
 

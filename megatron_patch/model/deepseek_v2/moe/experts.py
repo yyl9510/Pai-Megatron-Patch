@@ -27,7 +27,8 @@ from megatron.core.transformer.moe import grouped_gemm_util as gg
 from megatron.core.transformer.transformer_config import TransformerConfig
 
 from ..transformer.mlp import MLP, MLPSubmodules
-
+import torch.nn.functional as F
+from megatron.core.jit import jit_fuser
 
 class GroupedMLP(MegatronModule):
     """An efficient implementation of the Experts layer using CUTLASS GroupedGEMM.

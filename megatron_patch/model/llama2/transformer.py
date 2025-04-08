@@ -150,10 +150,16 @@ class ParallelMLP(MegatronModule):
         )
 
     def forward(self, hidden_states):
-
+        # import time
+        # torch.cuda.synchronize()
+        # start_time = time.time()
         # [s, b, 4hp]
         intermediate_parallel, bias_parallel = self.dense_h_to_4h(hidden_states)
 
+        # print(f"h_to_4h input: {hidden_states.shape}, h_to_4h output: {intermediate_parallel.shape}")
+        # torch.cuda.synchronize()
+        # dense_h_to_4h_time = time.time()
+        
         if self.bias_gelu_fusion:
             assert self.add_bias is True
             assert self.activation_func == F.gelu
@@ -162,9 +168,18 @@ class ParallelMLP(MegatronModule):
             if bias_parallel is not None:
                 intermediate_parallel = intermediate_parallel + bias_parallel
             intermediate_parallel = self.activation_func(intermediate_parallel)
-
+        # torch.cuda.synchronize()
+        # mlp_activation_time = time.time()
+        
         # [s, b, h]
         output, output_bias = self.dense_4h_to_h(intermediate_parallel)
+
+        # print(f"4h_to_h input: {intermediate_parallel.shape}, 4h_to_h output: {output.shape}")
+
+        # torch.cuda.synchronize()
+        # dense_4h_to_h_time = time.time()
+        # print(f"dense_h_to_4h_time: {(dense_h_to_4h_time-start_time) * 1000:.3f} ms, activation_time: {(mlp_activation_time-dense_h_to_4h_time) * 1000:.3f} ms,  dense_4h_to_h_time: {(dense_4h_to_h_time-mlp_activation_time) * 1000:.3f} ms")
+
         return output, output_bias
 
 def sinkhorn(cost, tol=0.0001):
@@ -1208,8 +1223,15 @@ class ParallelTransformerLayer(MegatronModule):
                 position_ids=None):
         # hidden_states: [s, b, h]
 
+        # import time
+        # torch.cuda.synchronize()
+        # start_time = time.time()
+
         # Layer norm at the beginning of the transformer layer.
         norm_output = self.input_norm(hidden_states)
+
+        # torch.cuda.synchronize()
+        # imput_norm_time = time.time() - start_time
 
         # Self attention.
         attention_output, attention_bias = \
@@ -1220,6 +1242,9 @@ class ParallelTransformerLayer(MegatronModule):
                 rotary_pos_emb=rotary_pos_emb,
                 position_ids=position_ids
             )
+
+        # torch.cuda.synchronize()
+        # self_attention_time = time.time() - start_time - imput_norm_time
 
         # Residual connection.
         if self.apply_residual_connection_post_norm:
@@ -1254,8 +1279,14 @@ class ParallelTransformerLayer(MegatronModule):
                                               training=self.training)
             norm_input = residual + self.drop_path(out)
 
+        # torch.cuda.synchronize()
+        # dropout_time = time.time() - start_time - imput_norm_time - self_attention_time
+        
         # Layer norm post the self attention.
         norm_output = self.post_attention_norm(norm_input)
+        
+        # torch.cuda.synchronize()
+        # post_attention_norm_time = time.time() - start_time - imput_norm_time - self_attention_time - dropout_time
 
         # Cross attention.
         if self.layer_type == LayerType.encoder:
@@ -1290,8 +1321,14 @@ class ParallelTransformerLayer(MegatronModule):
             raise Exception("Unsupported layer type, '%s'." %
                             self.layer_type.name)
 
+        # torch.cuda.synchronize()
+        # cross_attention_time = time.time() - start_time - imput_norm_time - self_attention_time - dropout_time - post_attention_norm_time
+
         # MLP.
         mlp_output, mlp_bias = self.mlp(norm_output)
+
+        # torch.cuda.synchronize()
+        # mlp_time = time.time() - start_time - imput_norm_time - self_attention_time - dropout_time - post_attention_norm_time - cross_attention_time
 
         # Second residual connection.
         if self.apply_residual_connection_post_norm:
@@ -1326,6 +1363,10 @@ class ParallelTransformerLayer(MegatronModule):
                                               p=self.hidden_dropout,
                                               training=self.training)
             output = residual + self.drop_path(out)
+
+        # torch.cuda.synchronize()
+        # post_mlp_time = time.time() - start_time - imput_norm_time - self_attention_time - dropout_time - post_attention_norm_time - cross_attention_time - mlp_time
+        # print(f"imput_norm_time: {imput_norm_time*1000.0:.2f} ms, self_attention_time: {self_attention_time*1000.0:.2f} ms, dropout_time: {dropout_time * 1000:.2f} ms, post_attention_norm_time: {post_attention_norm_time*1000.0:.2f} ms, cross_attention_time: {cross_attention_time*1000.0:.2f} ms, mlp_time: {mlp_time*1000.0:.2f} ms, post_mlp_time: {post_mlp_time*1000.0:.2f} ms, layer_total_time: {(time.time() - start_time)*1000.0:.2f} ms")
 
         if self.layer_type == LayerType.retro_decoder_with_retriever:
             return output, retriever_output

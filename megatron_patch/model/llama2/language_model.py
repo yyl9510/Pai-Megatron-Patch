@@ -470,6 +470,9 @@ class TransformerLanguageModel(MegatronModule):
                 inference_params=None,
                 pooling_sequence_index=0,
                 enc_hidden_states=None, output_enc_hidden=False):
+        # import time
+        # torch.cuda.synchronize()
+        # start_time = time.time()
 
         # Encoder embedding.
         if self.pre_process:
@@ -495,6 +498,8 @@ class TransformerLanguageModel(MegatronModule):
             else:
                 rotary_pos_emb = self.rotary_pos_emb(self.seq_length)
 
+        # torch.cuda.synchronize()
+        # embedding_time = time.time()
 
         if enc_position_ids is None:
             past_key_values_length = 0
@@ -523,6 +528,10 @@ class TransformerLanguageModel(MegatronModule):
                 encoder_output = self.encoder_hidden_state
         else:
             encoder_output = enc_hidden_states.to(encoder_input.dtype)
+
+        # torch.cuda.synchronize()
+        # encoder_time = time.time()
+        # print(f"embedding_time time: {(embedding_time-start_time) * 1000:.3f}ms, encoder_time time: {(encoder_time-embedding_time) * 1000:.3f}ms")
 
         if self.post_process:
             if self.add_pooler:

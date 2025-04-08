@@ -26,12 +26,18 @@ from .language_model import get_language_model
 def post_language_model_processing(lm_output, labels, logit_weights,
                                    parallel_output,
                                    fp16_lm_cross_entropy):
+    # import time
+    # torch.cuda.synchronize()
+    # start_time = time.time()
 
     # Output. Format [s b h]
     output = parallel_lm_logits(
         lm_output,
         logit_weights,
         parallel_output)
+    
+    # torch.cuda.synchronize()
+    # logit_weights_time = time.time() - start_time
 
     if labels is None:
         # [s b h] => [b s h]
@@ -47,6 +53,9 @@ def post_language_model_processing(lm_output, labels, logit_weights,
 
         # [s b] => [b, s]
         loss = loss.transpose(0,1).contiguous()
+        # torch.cuda.synchronize()
+        # cross_entropy_time = time.time() - start_time - logit_weights_time
+        # print(f"logit_weights_time time: {logit_weights_time * 1000:.3f}ms, cross_entropy_time time: {cross_entropy_time * 1000:.3f}ms")
         return loss
 
 
@@ -88,6 +97,10 @@ class GPTModel(MegatronModule):
                 retriever_position_ids=None,
                 retriever_attn_mask=None,
                 labels=None, tokentype_ids=None, inference_params=None):
+        
+        # import time
+        # torch.cuda.synchronize()
+        # start_time = time.time()
 
         lm_output = self.language_model(
             input_ids,
@@ -98,14 +111,22 @@ class GPTModel(MegatronModule):
             retriever_attn_mask=retriever_attn_mask,
             inference_params=inference_params)
 
+        # torch.cuda.synchronize()
+        # language_model_time = time.time()
+
         if self.post_process:
-            return post_language_model_processing(
+            lm_output = post_language_model_processing(
                 lm_output, labels,
                 self.language_model.output_layer.weight if self.untie_embeddings_and_output_weights else self.shared_embedding_or_output_weight(),
                 self.parallel_output,
                 self.fp16_lm_cross_entropy)
-        else:
-            return lm_output
+
+        # else:
+        # torch.cuda.synchronize()
+        # post_language_model_time = time.time()
+        # print(f"language_model_time time: {(language_model_time-start_time) * 1000:.3f}ms, post_language_model_time time: {(post_language_model_time-language_model_time) * 1000:.3f}ms")
+
+        return lm_output
 
     def state_dict_for_save_checkpoint(self, prefix='', keep_vars=False):
 

@@ -170,6 +170,10 @@ class GPTModel(LanguageModule):
         # If decoder_input is provided (not None), then input_ids and position_ids are ignored.
         # Otherwise, apply embedding layer on input_ids and position_ids to get decoder_input.
 
+        # import time
+        # torch.cuda.synchronize()
+        # start_time = time.time()
+
         # Decoder embedding.
         if decoder_input is not None:
             pass
@@ -180,6 +184,9 @@ class GPTModel(LanguageModule):
             # decoder will get hidden_states from encoder.input_tensor
             decoder_input = None
 
+        # torch.cuda.synchronize()
+        # embedding_time = time.time()
+
         # Rotary positional embeddings (embedding is None for PP intermediate devices)
         rotary_pos_emb = None
         if self.position_embedding_type == 'rope':
@@ -187,6 +194,9 @@ class GPTModel(LanguageModule):
                 inference_params, self.decoder, decoder_input, self.config
             )
             rotary_pos_emb = self.rotary_pos_emb(rotary_seq_len)
+
+        # torch.cuda.synchronize()
+        # rotary_pos_time = time.time()
 
         # Run decoder.
         hidden_states = self.decoder(
@@ -199,6 +209,9 @@ class GPTModel(LanguageModule):
             **(extra_block_kwargs or {}),
         )
 
+        # torch.cuda.synchronize()
+        # decoder_time = time.time()
+
         if not self.post_process:
             return hidden_states
 
@@ -208,11 +221,18 @@ class GPTModel(LanguageModule):
             output_weight = self.shared_embedding_or_output_weight()
         logits, _ = self.output_layer(hidden_states, weight=output_weight)
 
+        # torch.cuda.synchronize()
+        # logits_time = time.time()
+
         if labels is None:
             # [s b h] => [b s h]
             return logits.transpose(0, 1).contiguous()
 
         loss = self.compute_language_model_loss(labels, logits)
+
+        # torch.cuda.synchronize()
+        # loss_time = time.time()
+        # print(f"embedding_time: {(embedding_time - start_time)*1000:.3f}ms, rotary_pos_time: {(rotary_pos_time - embedding_time)*1000:.3f}ms, decoder_time: {(decoder_time - rotary_pos_time)*1000:.3f}ms, logits_time: {(logits_time - decoder_time)*1000:.3f}ms, loss_time: {(loss_time - logits_time)*1000:.3f}ms")
 
         return loss
 

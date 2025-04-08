@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-export CUDA_VISIBLE_DEVICES=7
+# export CUDA_VISIBLE_DEVICES=3
 START_TIME=$SECONDS
 MASTER_ADDR=localhost
 MASTER_PORT=$(shuf -n 1 -i 10000-65535)
@@ -18,12 +18,12 @@ CURRENT_DIR="$( cd "$( dirname "$0" )" && pwd )"
 MEGATRON_PATH=$( dirname $(dirname $( dirname ${CURRENT_DIR})))
 export PYTHONPATH=$PYTHONPATH:${MEGATRON_PATH}:${MEGATRON_PATH}/Megatron-LM-240405
 
-if [ $MODEL_SIZE = A2.4B ]; then
 
-HIDDEN_SIZE=2048
-NUM_ATTN_HEADS=16
-NUM_LAYERS=27
-INTERMEDIATE_SIZE=10944
+NUM_LAYERS=$9
+HIDDEN_SIZE=${10}
+INTERMEDIATE_SIZE=${11}
+NUM_ATTN_HEADS=${12}
+
 MOE_INTERMEDIATE_SIZE=1408
 MAX_POSITION_EMBEDDINGS=163840
 EXTRA_VOCAB_SIZE=2400
@@ -40,9 +40,7 @@ MOE_LAYER_FREQ=1
 
 moe_options=" \
     --moe-ffn-hidden-size ${MOE_INTERMEDIATE_SIZE} \
-    --enable-shared-expert \
     --moe-layer-freq ${MOE_LAYER_FREQ} \
-    --num-shared-experts ${NUM_SHARED_EXPERTS} \
     --moe-router-topk ${ROUTER_TOPK} \
     --num-experts ${NUM_EXPERTS} \
     --moe-aux-loss-coeff 1e-2 \
@@ -52,53 +50,17 @@ moe_options=" \
     --qk-nope-head-dim ${QK_NOPE_HEAD_DIM} \
     --qk-rope-head-dim ${QK_ROPE_HEAD_DIM} \
     --v-head-dim ${V_HEAD_DIM} \
-    --moe-router-load-balancing-type aux_loss"
-
-cpu_options=" \
-            --use-cpu-initialization"
-
-elif [ $MODEL_SIZE = A21B ]; then
-
-HIDDEN_SIZE=5120
-NUM_ATTN_HEADS=128
-NUM_LAYERS=60
-INTERMEDIATE_SIZE=12288
-MOE_INTERMEDIATE_SIZE=1536
-MAX_POSITION_EMBEDDINGS=163840
-EXTRA_VOCAB_SIZE=2400
-Q_LORA_RANK=1536
-KV_LORA_RANK=512
-QK_NOPE_HEAD_DIM=128
-QK_ROPE_HEAD_DIM=64
-V_HEAD_DIM=128
-ROPE_THETA=10000
-SCALE_FACTOR=40
-NUM_EXPERTS=160
-ROUTER_TOPK=6
-NUM_SHARED_EXPERTS=2
-MOE_LAYER_FREQ=1
-
-moe_options=" \
-    --moe-ffn-hidden-size ${MOE_INTERMEDIATE_SIZE} \
+    --moe-router-load-balancing-type aux_loss \
     --enable-shared-expert \
-    --moe-layer-freq ${MOE_LAYER_FREQ} \
     --num-shared-experts ${NUM_SHARED_EXPERTS} \
-    --moe-router-topk ${ROUTER_TOPK} \
-    --num-experts ${NUM_EXPERTS} \
-    --moe-aux-loss-coeff 1e-2 \
-    --expert-model-parallel-size 1 \
-    --target-expert-model-parallel-size ${EP} \
-    --q-lora-rank ${Q_LORA_RANK} \
-    --kv-lora-rank ${KV_LORA_RANK} \
-    --qk-nope-head-dim ${QK_NOPE_HEAD_DIM} \
-    --qk-rope-head-dim ${QK_ROPE_HEAD_DIM} \
-    --v-head-dim ${V_HEAD_DIM} \
-    --moe-router-load-balancing-type aux_loss"
+    "
+
+# --moe-grouped-gemm \
+
 
 cpu_options=" \
             --use-cpu-initialization"
 
-fi
 
 
 if [ $mg2hf = true ]; then
@@ -129,7 +91,7 @@ torchrun ${DISTRIBUTED_ARGS} hf2mcore_deepseek_v2_moe.py \
     --ffn-hidden-size ${INTERMEDIATE_SIZE} \
     --num-attention-heads ${NUM_ATTN_HEADS} \
     --max-position-embeddings ${MAX_POSITION_EMBEDDINGS} \
-    --seq-length 1 \
+    --seq-length 8192 \
     --no-async-tensor-model-parallel-allreduce \
     --patch-tokenizer-type LLamaTokenizer \
     --extra-vocab-size ${EXTRA_VOCAB_SIZE} \

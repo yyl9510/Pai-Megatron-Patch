@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 # Copyright (c) 2023 Alibaba PAI and Nvidia Megatron-LM Team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -85,15 +87,41 @@ def loss_func(loss_mask, output_tensor):
 def forward_step(data_iterator, model):
     """Forward step."""
     timers = get_timers()
+    # import time
+    # torch.cuda.synchronize()
+    # start_time = time.time()
 
     # Get the batch.
     timers('batch-generator', log_level=2).start()
     tokens, labels, loss_mask, attention_mask, position_ids = get_batch(
         data_iterator)
+    
+    # torch.cuda.synchronize()
+    # load_data_time = time.time()
+
+    # attention_mask[attention_mask == False] = True
+    # print(f"tokens: {tokens} {tokens.shape}\nlabels: {labels} {labels.shape}\nloss_mask: {loss_mask} {loss_mask.shape}\nattention_mask: {attention_mask} {attention_mask.shape}\nposition_ids: {position_ids} {position_ids.shape}")
+    # exit(0)
     timers('batch-generator').stop()
 
-    output_tensor = model(tokens, position_ids, attention_mask,
+    # print(model)
+    # from torchinfo import summary
+    # summary(model.module.module.language_model, input_data={"enc_input_ids":tokens, "enc_position_ids":position_ids, "enc_attn_mask": attention_mask}, depth=8, col_names=["input_size", "output_size", "num_params", "mult_adds", "trainable"])
+
+    # from torch.profiler import profile, record_function, ProfilerActivity
+    # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
+    #     with record_function("model_inference"):
+    #         output_tensor = model(tokens, position_ids, None, labels=labels)
+    # print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=30))
+
+
+    output_tensor = model(tokens, position_ids, None, # attention_mask,
                           labels=labels)
+    
+    # torch.cuda.synchronize()
+    # forward_time = time.time()
+    # print(f"load data time: {(load_data_time-start_time) * 1000:.2f}ms, forward time: {(forward_time - load_data_time) * 1000:.2f}ms")
+    
 
     return output_tensor, partial(loss_func, loss_mask)
 

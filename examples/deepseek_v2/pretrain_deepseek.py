@@ -155,7 +155,61 @@ def forward_step(data_iterator, model: GPTModel):
         data_iterator)
     timers('batch-generator').stop()
 
-    output_tensor = model(tokens, position_ids, attention_mask,
+    # params = sum(p.numel() for p in model.parameters())
+    # print(f"Total params: {params / 1e6:.0f}M")
+
+    # batch_size, seq_length = 1, 8 * 1024
+    # tmp_data = torch.randint(0, 5000, (batch_size, seq_length)).cuda()
+    # position_ids = torch.arange(0, seq_length, dtype=torch.long, device='cuda').unsqueeze(0).expand(batch_size, -1)
+    # attention_mask = torch.ones((batch_size, seq_length), dtype=torch.long, device='cuda')
+    # input_data = {
+    #     'input_ids': tmp_data,
+    #     'position_ids': position_ids,
+    #     'attention_mask': attention_mask
+    # }
+    # # _ = model.forward(tmp_data, position_ids, attention_mask)
+
+    # # hook method
+    # def print_model_structure(model, example_input):
+    #     hooks = []
+    #     def hook_fn(module, inputs, outputs):
+    #         if isinstance(inputs, tuple):
+    #             input_shapes = []
+    #             for inp in inputs:
+    #                 if isinstance(inp, torch.Tensor):
+    #                     input_shapes.append(inp.shape)
+    #                 else:
+    #                     input_shapes.append(inp)
+    #         elif isinstance(inputs, torch.Tensor):
+    #             input_shapes = inputs.shape
+    #         else:
+    #             input_shapes = inputs
+    #         import types
+    #         if isinstance(outputs, types.FunctionType):
+    #             output_shapes = None
+    #         elif isinstance(outputs, tuple):
+    #             output_shapes = tuple(out.shape for out in outputs if isinstance(out, torch.Tensor))
+    #         elif isinstance(outputs, torch.Tensor):
+    #             output_shapes = outputs.shape
+    #         else:
+    #             output_shapes = outputs
+    #         print(f"{module.__class__.__name__:<30} | Input: {input_shapes} -> Output: {output_shapes}")
+
+    #     for name, layer in model.named_modules():
+    #         hooks.append(layer.register_forward_hook(hook_fn))
+        
+    #     with torch.no_grad():
+    #         model(**example_input)
+        
+    #     for hook in hooks:
+    #         hook.remove()
+
+    # print_model_structure(model, input_data)
+    
+    # print(f"rank {torch.distributed.get_rank()}, tokens: {tokens}")
+    # exit(0)
+    
+    output_tensor = model(tokens, position_ids,  None, # attention_mask,
                           labels=labels)
 
     return output_tensor, partial(loss_func, loss_mask)

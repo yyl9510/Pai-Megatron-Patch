@@ -319,8 +319,13 @@ def train_step(forward_step_func, data_iterator,
             partition.zero_grad_buffer(zero_buffer=(not args.use_distributed_optimizer))
     optimizer.zero_grad()
 
+    # import time
+    # torch.cuda.synchronize()
+    # start_time = time.time()
+
     # Forward pass.
     forward_backward_func = get_forward_backward_func()
+    # print(f"forward_backward_func: {forward_backward_func}, num_microbatches: {get_num_microbatches()}, micro_batch_size: {args.micro_batch_size}")
     losses_reduced = forward_backward_func(
         forward_step_func=forward_step_func,
         data_iterator=data_iterator,
@@ -331,6 +336,9 @@ def train_step(forward_step_func, data_iterator,
         decoder_seq_length=args.decoder_seq_length,
         forward_only=False)
 
+    # torch.cuda.synchronize()
+    # forward_backward_time = time.time()
+
     # Empty unused memory.
     if args.empty_unused_memory_level >= 1:
         torch.cuda.empty_cache()
@@ -340,10 +348,18 @@ def train_step(forward_step_func, data_iterator,
         unwrapped_model = unwrap_model(model[0])
         unwrapped_model.cancel_gradients_last_layer(args.curr_iteration)
 
+    # torch.cuda.synchronize()
+    # vision_grad_time = time.time()
+
     # Update parameters.
     timers('optimizer', log_level=1).start(barrier=args.barrier_with_L1_time)
-    update_successful, grad_norm, num_zeros_in_grad = optimizer.step(args, timers)
+    update_successful, grad_norm, num_zeros_in_grad = None, None, None
+    # update_successful, grad_norm, num_zeros_in_grad = optimizer.step(args, timers)
     timers('optimizer').stop()
+
+    # torch.cuda.synchronize()
+    # optimizer_step_time = time.time()
+    # print(f"optimizer_step_time: {(optimizer_step_time - vision_grad_time) * 1000:.2f} ms")
 
     try:
         if update_successful:
@@ -510,7 +526,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
 
     if iteration % args.log_interval == 0:
         elapsed_time_per_iteration = timers('interval-time').elapsed(barrier=True)
-        print(f"elapsed_time_per_iteration: {elapsed_time_per_iteration:.2f}s, micro-bsz: {args.micro_batch_size}, seq_len: {args.seq_length}, iteration: {iteration}")
+        print(f"elapsed_time_per_iteration: {elapsed_time_per_iteration * 1000:.2f}ms, micro-bsz: {args.micro_batch_size}, num_microbatches: {get_num_microbatches()} seq_len: {args.seq_length}, iteration: {iteration}")
 
         if writer:
             if args.log_timers_to_tensorboard:
@@ -522,8 +538,8 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             args.consumed_train_samples)
         log_string += ' elapsed time per iteration (ms): {:.1f} |'.format(
             elapsed_time_per_iteration * 1000.0)
-        curent_iter_token_per_sec = (args.micro_batch_size * args.seq_length) / args.tensor_model_parallel_size/ args.pipeline_model_parallel_size / elapsed_time_per_iteration
-        log_string += ' Current iteration token per second per card(token/s): {:.1f} |'.format(curent_iter_token_per_sec)
+        curent_iter_token_per_sec = (args.micro_batch_size * get_num_microbatches() * args.seq_length) / args.tensor_model_parallel_size/ args.pipeline_model_parallel_size / elapsed_time_per_iteration
+        log_string += ' Current iteration token per second per GPU(token/s): {:.1f} |'.format(curent_iter_token_per_sec)
 
         cuda_gb_max_allocated = torch.cuda.max_memory_allocated() / 1024 / 1024 / 1024
         cuda_gb_max_reserved = torch.cuda.max_memory_reserved() / 1024 / 1024 / 1024
@@ -566,7 +582,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             model_name = '_'.join(filename.split('_')[:2])
             tflops = '_'.join(filename.split('_')[2:3])
             config = {
-                "card": args.world_size, 
+                "GPU": args.world_size, 
                 "tp": args.tensor_model_parallel_size, 
                 "pp": args.pipeline_model_parallel_size, 
                 "zero": args.use_distributed_optimizer, 
@@ -582,7 +598,13 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                 "max_allocated": round(cuda_gb_max_allocated, 2),
                 "max_reserved": round(cuda_gb_max_reserved, 2)
             }
-            with open(f"/workspace/megatron_data/llama3/megatron-output/megatron_lm_data.jsonl", 'a') as f:
+            if "llama3" in model_name:
+                dump_file = f"/workspace/megatron_data/llama3/megatron-output/megatron_llama3_speed.jsonl"
+            elif "deepseek" in model_name:
+                dump_file = f"/workspace/megatron_data/deepseek/megatron-output/megatron_deepseek_speed.jsonl"
+            else:
+                raise ValueError(f"Unknown model name: {model_name}")
+            with open(dump_file, 'a') as f:
                 import json
                 json.dump(training_data, f)
                 f.write('\n')
@@ -648,6 +670,23 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
 
         update_num_microbatches(args.consumed_train_samples)
         args.curr_iteration = iteration
+
+        # from torch.profiler import profile, record_function, ProfilerActivity
+        # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, with_flops=True) as prof:
+        #     with record_function("_train_epoch"):
+        #         loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
+        #             train_step(forward_step_func,
+        #                train_data_iterator,
+        #                model,
+        #                optimizer,
+        #                opt_param_scheduler,
+        #                config)
+        # if torch.distributed.get_rank() == 0:
+        #     print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=30))
+        #     total_flops = sum(event.flops for event in prof.events() if hasattr(event, 'flops'))
+        #     print(f"Total FLOPs: {total_flops}")
+            # prof.export_chrome_trace("profile_megatron_llama3.json")
+
         loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
             train_step(forward_step_func,
                        train_data_iterator,
