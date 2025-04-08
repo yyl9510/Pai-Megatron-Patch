@@ -30,8 +30,9 @@ HIDDEN_SIZE=${10}
 INTERMEDIATE_SIZE=${11}
 NUM_ATTN_HEADS=${12}
 
-BATCH_SIZE=1                                        # 每卡训练一次迭代样本数: 4, 8  
-GLOBAL_BATCH_SIZE=$((BATCH_SIZE * GPUS_PER_NODE / PP / TP))      # 全局batch size  
+BATCH_SIZE=${13}                                        # 每卡训练一次迭代样本数: 4, 8  
+NUM_MICROBATCHES=${14}
+GLOBAL_BATCH_SIZE=$((BATCH_SIZE * NUM_MICROBATCHES * GPUS_PER_NODE / PP / TP))      # 全局batch size  
 TRAIN_TOKENS=$((GLOBAL_BATCH_SIZE * SEQ_LEN * 10))                 # 训练token数  
 
 # chmod +x ./examples/deepseek_v2/run_pretrain_deepseek.sh  
